@@ -886,80 +886,77 @@ static void diagMCUMenu(void)
 	diagRunMenu("MCU", items, (uint8_t)MY_ARRAYSIZE(items));
 }
 
-void diagnosticsMainMenu(void)
-{
-	while (true) {
-		diagPrintSeparationLine();
-		MY_SERIALDEVICE.println(F("Main:\n\n"
-		                          "[M] MCU\n"
-		                          "[E] EEPROM\n"
-		                          "[C] CRYPTO\n"
-		                          "[R] Reboot\n"
-		                          "[I] Info\n"
+#if !defined(MY_DIAGNOSTICS_CRYPTO)
+static void diagCryptoTests(void) { diagPrint(PSTR("> Crypto not configured\n")); }
+#endif
 
-		                          "[T] TSP SM\n"
-#if defined(MY_RADIO_RF24)
-		                          "[2] RF24\n"
-#endif
-#if defined(MY_RADIO_RFM69) && defined(MY_RFM69_NEW_DRIVER)
-		                          "[6] RFM69\n"
-#endif
-#if defined(MY_RADIO_RFM95)
-		                          "[9] RFM95\n"
-#endif
-		                         ));
-		diagPrintSeparationLine();
-		diagFlushSerial();
-		diagSerialInput();
-		if (inputCmd == 'T') {
-			diagTransportMenu();
-		} else if (inputCmd == 'E') {
-			diagEEPROMMenu();
-		} else if (inputCmd == 'C') {
-#if defined(MY_DIAGNOSTICS_CRYPTO)
-			diagCryptoTests();
-#else
-			MY_SERIALDEVICE.println(F("> Define MY_DIAGNOSTICS_CRYPTO to enable"));
-#endif
-		} else if (inputCmd == 'M') {
-			diagMCUMenu();
-		} else if (inputCmd == '2') {
-#if defined(MY_RADIO_RF24)
-			diagRF24Menu();
-#endif
-		} else if (inputCmd == '6') {
-#if defined(MY_RADIO_RFM69) && defined(MY_RFM69_NEW_DRIVER)
-			diagRFM69Menu();
-#endif
-		} else if (inputCmd == '9') {
-#if defined(MY_RADIO_RFM95)
-			diagRFM95Menu();
-#endif
-		} else if (inputCmd == 'R') {
-			hwReboot();
-		} else if (inputCmd == 'I') {
-			MY_SERIALDEVICE.println(F("Press any key to exit\n"));
-			hwRandomNumberInit();
-			while (!MY_SERIALDEVICE.available()) {
-				diagPrint(PSTR("> T_CPU=%" PRIi8 ", V_CPU=%" PRIu16 ", RNG=%" PRIu8 "\n"),
-				      hwCPUTemperature(), hwCPUVoltage(), random(256));
-				doYield();
-				delay(100);
-			}
-		} else {
-			MY_SERIALDEVICE.println(F("!CMD"));
-		}
+static void diagDoReboot(void) { hwReboot(); }
+
+static void diagLiveInfo(void)
+{
+	MY_SERIALDEVICE.println(F("Press any key to exit\n"));
+	hwRandomNumberInit();
+	while (!MY_SERIALDEVICE.available()) {
+		diagPrint(PSTR("> T_CPU=%" PRIi8 ", V_CPU=%" PRIu16 ", RNG=%" PRIu8 "\n"),
+		          hwCPUTemperature(), hwCPUVoltage(), random(256));
+		doYield();
+		delay(100);
 	}
+}
+
+static void diagMainMenu(void)
+{
+#if defined(MY_RADIO_RF24)
+	static const DiagMenuItem_t items[] = {
+		{ 'M', "MCU",    diagMCUMenu       },
+		{ 'E', "EEPROM", diagEEPROMMenu    },
+		{ 'C', "CRYPTO", diagCryptoTests   },
+		{ 'R', "Reboot", diagDoReboot      },
+		{ 'I', "Info",   diagLiveInfo      },
+		{ 'T', "TSP SM", diagTransportMenu },
+		{ '2', "RF24",   diagRF24Menu      },
+	};
+#elif defined(MY_RADIO_RFM69) && defined(MY_RFM69_NEW_DRIVER)
+	static const DiagMenuItem_t items[] = {
+		{ 'M', "MCU",    diagMCUMenu       },
+		{ 'E', "EEPROM", diagEEPROMMenu    },
+		{ 'C', "CRYPTO", diagCryptoTests   },
+		{ 'R', "Reboot", diagDoReboot      },
+		{ 'I', "Info",   diagLiveInfo      },
+		{ 'T', "TSP SM", diagTransportMenu },
+		{ '6', "RFM69",  diagRFM69Menu     },
+	};
+#elif defined(MY_RADIO_RFM95)
+	static const DiagMenuItem_t items[] = {
+		{ 'M', "MCU",    diagMCUMenu       },
+		{ 'E', "EEPROM", diagEEPROMMenu    },
+		{ 'C', "CRYPTO", diagCryptoTests   },
+		{ 'R', "Reboot", diagDoReboot      },
+		{ 'I', "Info",   diagLiveInfo      },
+		{ 'T', "TSP SM", diagTransportMenu },
+		{ '9', "RFM95",  diagRFM95Menu     },
+	};
+#else
+	static const DiagMenuItem_t items[] = {
+		{ 'M', "MCU",    diagMCUMenu       },
+		{ 'E', "EEPROM", diagEEPROMMenu    },
+		{ 'C', "CRYPTO", diagCryptoTests   },
+		{ 'R', "Reboot", diagDoReboot      },
+		{ 'I', "Info",   diagLiveInfo      },
+		{ 'T', "TSP SM", diagTransportMenu },
+	};
+#endif
+	diagRunMenu("Main", items, (uint8_t)MY_ARRAYSIZE(items));
 }
 
 
 void diagnosticsRun(void)
 {
-	MY_SERIALDEVICE.println(F("\nMySensors Diagnostics v1.0"));
+	MY_SERIALDEVICE.println(F("\nMySensors Diagnostics v2.0"));
 	diagPrintSeparationLine();
 	diagPrint(PSTR("LIB: MySensors %s\n"), MYSENSORS_LIBRARY_VERSION);
 	diagPrint(PSTR("REL: %" PRIu8 "\n"), MYSENSORS_LIBRARY_VERSION_PRERELEASE_NUMBER);
 	diagPrint(PSTR("VER: %" PRIx32 "\n"), MYSENSORS_LIBRARY_VERSION_INT);
 	diagPrint(PSTR("CAP: %s\n"), MY_CAPABILITIES);
-	diagnosticsMainMenu();
+	diagMainMenu();
 }
