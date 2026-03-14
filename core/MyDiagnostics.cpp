@@ -91,31 +91,31 @@ static void diagPrintSeparationLine(void)
 
 static void diagRunMenu(const char* title, const DiagMenuItem_t* items, uint8_t count)
 {
-    while (true) {
-        diagPrintSeparationLine();
-        diagPrint(PSTR("%s:\n\n"), title);   // title is RAM — %s correct
-        for (uint8_t i = 0; i < count; i++) {
-            diagPrint(PSTR("[%c] %s\n"), items[i].cmd, items[i].label); // label is RAM
-        }
-        diagPrint(PSTR("[X] Exit\n"));
-        diagPrintSeparationLine();
-        diagFlushSerial();
-        diagSerialInput();
-        if (inputCmd == 'X') {
-            return;
-        }
-        bool found = false;
-        for (uint8_t i = 0; i < count; i++) {
-            if (inputCmd == items[i].cmd) {
-                items[i].fn();
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            diagPrint(PSTR("!CMD\n"));
-        }
-    }
+	while (true) {
+		diagPrintSeparationLine();
+		diagPrint(PSTR("%s:\n\n"), title);   // title is RAM — %s correct
+		for (uint8_t i = 0; i < count; i++) {
+			diagPrint(PSTR("[%c] %s\n"), items[i].cmd, items[i].label); // label is RAM
+		}
+		diagPrint(PSTR("[X] Exit\n"));
+		diagPrintSeparationLine();
+		diagFlushSerial();
+		diagSerialInput();
+		if (inputCmd == 'X') {
+			return;
+		}
+		bool found = false;
+		for (uint8_t i = 0; i < count; i++) {
+			if (inputCmd == items[i].cmd) {
+				items[i].fn();
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			diagPrint(PSTR("!CMD\n"));
+		}
+	}
 }
 
 void diagnosticsMySensorsEEPROMDump(void)
