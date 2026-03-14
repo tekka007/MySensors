@@ -434,7 +434,7 @@ static void diagCryptoTests(void)
 #endif
 
 #if defined(ARDUINO_ARCH_AVR)
-void diagnosticsWatchdogTest(void)
+static void diagWatchdogTest(void)
 {
 	MY_SERIALDEVICE.println(F("Set WDT to 4s\n"));
 	hwWatchdogReset();
@@ -751,7 +751,7 @@ static void diagTransportMenu(void)
 #endif
 }
 
-void diagnosticsMCUMenu(void)
+static void diagMCUInfo(void)
 {
 #if defined(ARDUINO_ARCH_ESP8266)
 	MY_SERIALDEVICE.println(F("ARCH: ESP8266"));
@@ -827,50 +827,63 @@ void diagnosticsMCUMenu(void)
 	diagPrint(PSTR("Sketch size: %" PRIu32 "\n"), ESP.getSketchSize());
 	diagPrint(PSTR("Free sketch space: %" PRIu32 "\n"), ESP.getFreeSketchSpace());
 #endif
-	while (true) {
+}
 
-		diagPrintSeparationLine();
-		MY_SERIALDEVICE.println(F("MCU:\n\n"
-		                          "[Dx] Read PIN\n"
-		                          "[Sx] Set PIN\n"
-		                          "[Rx] Reset PIN\n"
+static void diagMCUReadPin(void)
+{
+	hwPinMode(inputParameter.toInt(), INPUT);
+	diagPrint(PSTR("PIN %" PRIu8 " = %" PRIu8 "\n"),
+	          inputParameter.toInt(), hwDigitalRead(inputParameter.toInt()));
+}
+
+static void diagMCUSetPin(void)
+{
+	diagPrint(PSTR("SET PIN %" PRIu8 "\n"), inputParameter.toInt());
+	hwPinMode(inputParameter.toInt(), OUTPUT);
+	hwDigitalWrite(inputParameter.toInt(), HIGH);
+}
+
+static void diagMCUResetPin(void)
+{
+	diagPrint(PSTR("CLR PIN %" PRIu8 "\n"), inputParameter.toInt());
+	hwPinMode(inputParameter.toInt(), OUTPUT);
+	hwDigitalWrite(inputParameter.toInt(), LOW);
+}
+
+static void diagMCUSleep(void)
+{
+	diagPrint(PSTR("Sleeping %" PRIu32 "ms\n"), inputParameter.toInt());
+	transportSleep();
+	hwSleep((uint32_t)inputParameter.toInt());
+	diagPrint(PSTR("waking up\n"));
+	transportStandBy();
+}
+
 #if defined(ARDUINO_ARCH_AVR)
-		                          "[W] WDT\n"
+static void diagMCUWatchdog(void) { diagWatchdogTest(); }
 #endif
-		                          "[Px] Sleep x ms\n"
-		                          "[X] Exit\n"
-		                         ));
-		diagPrintSeparationLine();
-		diagFlushSerial();
-		diagSerialInput();
-		if (inputCmd == 'D') {
-			hwPinMode(inputParameter.toInt(), INPUT);
-			diagPrint(PSTR("PIN %" PRIu8 " = %" PRIu8 "\n"), inputParameter.toInt(),
-			      hwDigitalRead(inputParameter.toInt()));
-		} else if (inputCmd == 'S') {
-			diagPrint(PSTR("SET PIN %" PRIu8 "\n"), inputParameter.toInt());
-			hwPinMode(inputParameter.toInt(), OUTPUT);
-			hwDigitalWrite(inputParameter.toInt(), HIGH);
-		} else if (inputCmd == 'R') {
-			diagPrint(PSTR("CLR PIN %" PRIu8 "\n"), inputParameter.toInt());
-			hwPinMode(inputParameter.toInt(), OUTPUT);
-			hwDigitalWrite(inputParameter.toInt(), LOW);
-		} else if (inputCmd == 'W') {
+
+static void diagMCUMenu(void)
+{
 #if defined(ARDUINO_ARCH_AVR)
-			diagnosticsWatchdogTest();
+	static const DiagMenuItem_t items[] = {
+		{ 'I', "Info",        diagMCUInfo     },
+		{ 'D', "Read PIN x",  diagMCUReadPin  },
+		{ 'S', "Set PIN x",   diagMCUSetPin   },
+		{ 'R', "Reset PIN x", diagMCUResetPin },
+		{ 'P', "Sleep x ms",  diagMCUSleep    },
+		{ 'W', "WDT",         diagMCUWatchdog },
+	};
+#else
+	static const DiagMenuItem_t items[] = {
+		{ 'I', "Info",        diagMCUInfo     },
+		{ 'D', "Read PIN x",  diagMCUReadPin  },
+		{ 'S', "Set PIN x",   diagMCUSetPin   },
+		{ 'R', "Reset PIN x", diagMCUResetPin },
+		{ 'P', "Sleep x ms",  diagMCUSleep    },
+	};
 #endif
-		} else if (inputCmd == 'P') {
-			diagPrint(PSTR("Sleeping %" PRIu32 "ms\n"), inputParameter.toInt());
-			transportSleep();
-			hwSleep((uint32_t)inputParameter.toInt());
-			diagPrint(PSTR("waking up\n"));
-			transportStandBy();
-		} else if (inputCmd == 'X') {
-			return;
-		} else {
-			MY_SERIALDEVICE.println(F("!CMD"));
-		}
-	}
+	diagRunMenu("MCU", items, (uint8_t)MY_ARRAYSIZE(items));
 }
 
 void diagnosticsMainMenu(void)
@@ -909,7 +922,7 @@ void diagnosticsMainMenu(void)
 			MY_SERIALDEVICE.println(F("> Define MY_DIAGNOSTICS_CRYPTO to enable"));
 #endif
 		} else if (inputCmd == 'M') {
-			diagnosticsMCUMenu();
+			diagMCUMenu();
 		} else if (inputCmd == '2') {
 #if defined(MY_RADIO_RF24)
 			diagRF24Menu();
