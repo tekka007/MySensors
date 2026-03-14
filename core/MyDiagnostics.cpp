@@ -526,139 +526,133 @@ void diagnosticsRFM69Menu(void)
 #endif
 
 #if defined(MY_RADIO_RF24)
-void diagnosticsRF24Menu(void)
+static void diagRF24Init(void)
 {
 	RF24_initialize();
-	while (true) {
-		diagFlushSerial();
-		diagPrintSeparationLine();
-		MY_SERIALDEVICE.println(F("RF24:\n"));
-		diagPrint(PSTR("SPI: MOSI=%" PRIu8 ", MISO=%" PRIu8 ", SCK=%" PRIu8 ", CS=%" PRIu8 ", CE=%" PRIu8 "\n"),
-		      MOSI, MISO, SCK, MY_RF24_CS_PIN, MY_RF24_CE_PIN);
-		diagPrint(PSTR("RF: ADDR=%" PRIu8 ", CH=%" PRIu8 ", POW=%" PRIu8 ", CFG=%" PRIu8 "\n"),
-		      RF24_getNodeID(),
-		      RF24_getChannel(), RF24_getRawTxPowerLevel(), RF24_getRFConfiguration());
-
-		MY_SERIALDEVICE.println(F("[I] Init\n"
-		                          "[D] Dump REG\n"
-		                          "[Ax] ADDR=x\n"
-		                          "[Cx] CH=x\n"
-		                          "[Wx] POW=X\n"
-		                          "[L] SLP\n"
-		                          "[B] STDBY\n"
-		                          "[O] CAR on\n"
-		                          "[Q] CAR off\n"
-		                          "[R] RX\n"
-		                          "[Tx] TX to x\n"
-		                          "[P] Poll STAT\n"
-		                          "[S] Scan CHs\n"
-		                          "[X] Exit"
-		                         ));
-		diagPrintSeparationLine();
-		diagSerialInput();
-		if (inputCmd == 'I') {
-			RF24_initialize();
-		} else if (inputCmd == 'A') {
-			RF24_setNodeAddress(inputParameter.toInt());
-		} else if (inputCmd == 'C') {
-			RF24_setChannel(inputParameter.toInt());
-		} else if (inputCmd == 'W') {
-			RF24_setTxPowerLevel(inputParameter.toInt());
-		} else if (inputCmd == 'L') {
-			RF24_sleep();
-		} else if (inputCmd == 'B') {
-			RF24_standBy();
-		} else if (inputCmd == 'R') {
-			RF24_startListening();
-		} else if (inputCmd == 'T') {
-			uint8_t buffer[] = { 'T','E','S','T','R','F','2','4' };
-			RF24_sendMessage(inputParameter.toInt(), buffer, sizeof(buffer), false);
-		} else if (inputCmd == 'P') {
-			diagPrintSeparationLine();
-			MY_SERIALDEVICE.println(F("Press any key to exit"));
-			diagPrintSeparationLine();
-			diagFlushSerial();
-			while (!MY_SERIALDEVICE.available()) {
-				diagPrint(PSTR("status=%02" PRIX8 "\n"), RF24_getStatus());
-				delay(300);
-			}
-			MY_SERIALDEVICE.println(F("Exiting..."));
-		} else if (inputCmd == 'O') {
-			RF24_enableConstantCarrierWave();
-		} else if (inputCmd == 'Q') {
-			RF24_disableConstantCarrierWave();
-		} else if (inputCmd == 'D') {
-			//uint8_t buffer[16];
-			for (uint8_t i = 0; i < 0x20; i++) {
-				diagPrint(PSTR("Reg 0x%02" PRIX8 " = 0x%02" PRIX8 "\n"), i, RF24_readByteRegister(i));
-				/*
-				(void)RF24_readMultiByteRegister(i, buffer, sizeof(buffer));
-				diagPrintHex(buffer, sizeof(buffer));
-				for (uint8_t cnt = 0; cnt < sizeof(buffer); cnt++) {
-					buffer[cnt] = 0xFF;
-				}
-				(void)RF24_writeMultiByteRegister(i, buffer, sizeof(buffer));
-				(void)RF24_readMultiByteRegister(i, buffer, sizeof(buffer));
-				diagPrintHex(buffer, sizeof(buffer));
-
-				for (uint8_t cnt = 0; cnt < sizeof(buffer); cnt++) {
-					buffer[cnt] = 0x00;
-				}
-				(void)RF24_writeMultiByteRegister(i, buffer, sizeof(buffer));
-				(void)RF24_readMultiByteRegister(i, buffer, sizeof(buffer));
-				diagPrintHex(buffer, sizeof(buffer));
-				*/
-			}
-		} else if (inputCmd == 'S') {
-
-			MY_SERIALDEVICE.println(F("Press any key to exit"));
-			diagFlushSerial();
-
-			const uint8_t num_channels = 126;
-
-			for(uint8_t i = 0; i < num_channels; i++) {
-				diagPrint(PSTR("%" PRIX8), i >> 4);
-			}
-			MY_SERIALDEVICE.println();
-
-			for (uint8_t i = 0; i < num_channels; i++) {
-				diagPrint(PSTR("%" PRIX8), i & 0xf);
-			}
-
-			MY_SERIALDEVICE.println();
-
-
-			while (!MY_SERIALDEVICE.available()) {
-
-				uint8_t values[num_channels];
-				// disable ACK on all pipes
-				RF24_setAutoACK(0);
-				// clear result array
-				(void)memset(values, 0, sizeof(values));
-				for (uint8_t rep_counter = 0; rep_counter < 100; rep_counter++) {
-					for (uint8_t channel = 0; channel < num_channels; channel++) {
-						RF24_setChannel(channel);
-						RF24_startListening();
-						delayMicroseconds(130 + 40);
-						// Carrier detected?
-						if (RF24_getReceivedPowerDetector()) {
-							values[channel] = values[channel] + 1;
-						}
-						RF24_stopListening();
-					}
-				}
-
-				for (uint8_t i = 0; i < num_channels; i++) {
-					diagPrint(PSTR("%" PRIX8), min(0xf, values[i]));
-				}
-
-				MY_SERIALDEVICE.println();
-			}
-		} else if (inputCmd == 'X') {
-			return;
-		}
+}
+static void diagRF24SetAddr(void)
+{
+	RF24_setNodeAddress(inputParameter.toInt());
+}
+static void diagRF24SetChannel(void)
+{
+	RF24_setChannel(inputParameter.toInt());
+}
+static void diagRF24SetPower(void)
+{
+	RF24_setTxPowerLevel(inputParameter.toInt());
+}
+static void diagRF24Sleep(void)
+{
+	RF24_sleep();
+}
+static void diagRF24Standby(void)
+{
+	RF24_standBy();
+}
+static void diagRF24RX(void)
+{
+	RF24_startListening();
+}
+static void diagRF24TX(void)
+{
+	uint8_t buffer[] = { 'T','E','S','T','R','F','2','4' };
+	RF24_sendMessage(inputParameter.toInt(), buffer, sizeof(buffer), false);
+}
+static void diagRF24PollStatus(void)
+{
+	diagPrintSeparationLine();
+	MY_SERIALDEVICE.println(F("Press any key to exit"));
+	diagPrintSeparationLine();
+	diagFlushSerial();
+	while (!MY_SERIALDEVICE.available()) {
+		diagPrint(PSTR("status=%02" PRIX8 "\n"), RF24_getStatus());
+		delay(300);
 	}
+	MY_SERIALDEVICE.println(F("Exiting..."));
+}
+static void diagRF24CarrierOn(void)
+{
+	RF24_enableConstantCarrierWave();
+}
+static void diagRF24CarrierOff(void)
+{
+	RF24_disableConstantCarrierWave();
+}
+static void diagRF24DumpRegs(void)
+{
+	for (uint8_t i = 0; i < 0x20; i++) {
+		diagPrint(PSTR("Reg 0x%02" PRIX8 " = 0x%02" PRIX8 "\n"), i, RF24_readByteRegister(i));
+	}
+}
+static void diagRF24ScanChannels(void)
+{
+	MY_SERIALDEVICE.println(F("Press any key to exit"));
+	diagFlushSerial();
 
+	const uint8_t num_channels = 126;
+
+	for (uint8_t i = 0; i < num_channels; i++) {
+		diagPrint(PSTR("%" PRIX8), i >> 4);
+	}
+	MY_SERIALDEVICE.println();
+
+	for (uint8_t i = 0; i < num_channels; i++) {
+		diagPrint(PSTR("%" PRIX8), i & 0xf);
+	}
+	MY_SERIALDEVICE.println();
+
+	while (!MY_SERIALDEVICE.available()) {
+		uint8_t values[num_channels];
+		// disable ACK on all pipes
+		RF24_setAutoACK(0);
+		// clear result array
+		(void)memset(values, 0, sizeof(values));
+		for (uint8_t rep_counter = 0; rep_counter < 100; rep_counter++) {
+			for (uint8_t channel = 0; channel < num_channels; channel++) {
+				RF24_setChannel(channel);
+				RF24_startListening();
+				delayMicroseconds(130 + 40);
+				// Carrier detected?
+				if (RF24_getReceivedPowerDetector()) {
+					values[channel] = values[channel] + 1;
+				}
+				RF24_stopListening();
+			}
+		}
+		for (uint8_t i = 0; i < num_channels; i++) {
+			diagPrint(PSTR("%" PRIX8), min(0xf, values[i]));
+		}
+		MY_SERIALDEVICE.println();
+	}
+}
+static void diagRF24Menu(void)
+{
+	RF24_initialize();
+	diagPrint(PSTR("SPI: MOSI=%" PRIu8 ", MISO=%" PRIu8 ", SCK=%" PRIu8
+	               ", CS=%" PRIu8 ", CE=%" PRIu8 "\n"),
+	          MOSI, MISO, SCK, MY_RF24_CS_PIN, MY_RF24_CE_PIN);
+	diagPrint(PSTR("RF: ADDR=%" PRIu8 ", CH=%" PRIu8 ", POW=%" PRIu8
+	               ", CFG=%" PRIu8 "\n"),
+	          RF24_getNodeID(), RF24_getChannel(),
+	          RF24_getRawTxPowerLevel(), RF24_getRFConfiguration());
+
+	static const DiagMenuItem_t items[] = {
+		{ 'I', "Init",      diagRF24Init         },
+		{ 'D', "Dump REG",  diagRF24DumpRegs     },
+		{ 'A', "ADDR=x",    diagRF24SetAddr      },
+		{ 'C', "CH=x",      diagRF24SetChannel   },
+		{ 'W', "POW=x",     diagRF24SetPower     },
+		{ 'L', "SLP",       diagRF24Sleep        },
+		{ 'B', "STDBY",     diagRF24Standby      },
+		{ 'O', "CAR on",    diagRF24CarrierOn    },
+		{ 'Q', "CAR off",   diagRF24CarrierOff   },
+		{ 'R', "RX",        diagRF24RX           },
+		{ 'T', "TX to x",   diagRF24TX           },
+		{ 'P', "Poll STAT", diagRF24PollStatus   },
+		{ 'S', "Scan CHs",  diagRF24ScanChannels },
+	};
+	diagRunMenu("RF24", items, (uint8_t)MY_ARRAYSIZE(items));
 }
 #endif
 
@@ -934,7 +928,7 @@ void diagnosticsMainMenu(void)
 			diagnosticsMCUMenu();
 		} else if (inputCmd == '2') {
 #if defined(MY_RADIO_RF24)
-			diagnosticsRF24Menu();
+			diagRF24Menu();
 #endif
 		} else if (inputCmd == '6') {
 #if defined(MY_RADIO_RFM69)
