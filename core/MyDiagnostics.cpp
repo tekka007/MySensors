@@ -285,7 +285,7 @@ static void diagEEPROMMenu(void)
 }
 
 #if defined(MY_DIAGNOSTICS_CRYPTO)
-bool diagnosticsCryptoMenu(void)
+static void diagCryptoTests(void)
 {
 	MY_SERIALDEVICE.println(F("Testing:"));
 	const uint8_t test_data[64] = { 0x76, 0x49, 0xab, 0xac, 0x81, 0x19, 0xb2, 0x46, 0xce, 0xe9, 0x8e, 0x9b, 0x12, 0xe9, 0x19, 0x7d,
@@ -426,7 +426,6 @@ bool diagnosticsCryptoMenu(void)
 	} else {
 		MY_SERIALDEVICE.println(F("FAIL!"));
 	}
-	return false;
 }
 #endif
 
@@ -927,7 +926,7 @@ void diagnosticsMainMenu(void)
 			diagEEPROMMenu();
 		} else if (inputCmd == 'C') {
 #if defined(MY_DIAGNOSTICS_CRYPTO)
-			diagnosticsCryptoMenu();
+			diagCryptoTests();
 #else
 			MY_SERIALDEVICE.println(F("> Define MY_DIAGNOSTICS_CRYPTO to enable"));
 #endif
