@@ -602,10 +602,10 @@ static void diagRF24ScanChannels(void)
 	}
 	MY_SERIALDEVICE.println();
 
+	// Disable ACK once before scanning — not inside the loop
+	RF24_setAutoACK(0);
 	while (!MY_SERIALDEVICE.available()) {
 		uint8_t values[num_channels];
-		// disable ACK on all pipes
-		RF24_setAutoACK(0);
 		// clear result array
 		(void)memset(values, 0, sizeof(values));
 		for (uint8_t rep_counter = 0; rep_counter < 100; rep_counter++) {
