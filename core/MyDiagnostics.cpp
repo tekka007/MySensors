@@ -20,6 +20,10 @@
 
 #include "MyDiagnostics.h"
 
+#ifndef MY_ARRAYSIZE
+#define MY_ARRAYSIZE(x) (sizeof(x) / sizeof(x[0]))
+#endif
+
 static char inputBuffer[15];
 static char inputCmd;
 static uint8_t inputBufferPosition;
@@ -444,84 +448,73 @@ void diagnosticsWatchdogTest(void)
 #endif
 
 #if defined(MY_RADIO_RFM95)
-void diagnosticsRFM95Menu(void)
+static void diagRFM95Menu(void)
 {
-
+	diagPrint(PSTR("> RFM95: not yet implemented\n"));
 }
 #endif
 
 #if defined(MY_RADIO_RFM69) && defined(MY_RFM69_NEW_DRIVER)
-void diagnosticsRFM69Menu(void)
+static void diagRFM69Init(void)        { RFM69_initialise(RFM69_868MHZ); }
+static void diagRFM69SetAddr(void)     { RFM69_setAddress(inputParameter.toInt()); }
+static void diagRFM69SetFreq(void)     { RFM69_setFrequency(inputParameter.toInt()); }
+static void diagRFM69SetPower(void)    { RFM69_setTxPowerLevel(inputParameter.toInt()); }
+static void diagRFM69Sleep(void)       { RFM69_sleep(); }
+static void diagRFM69Standby(void)     { RFM69_standBy(); }
+static void diagRFM69RX(void)          { (void)RFM69_setRadioMode(RFM69_RADIO_MODE_RX); }
+static void diagRFM69CarrierOn(void)   { (void)RFM69_setRadioMode(RFM69_RADIO_MODE_TX); }
+static void diagRFM69CarrierOff(void)  { (void)RFM69_setRadioMode(RFM69_RADIO_MODE_STDBY); }
+static void diagRFM69TX(void)
+{
+	uint8_t buffer[] = { 'T','E','S','T','R','F','M','6','9' };
+	RFM69_sendWithRetry(inputParameter.toInt(), buffer, sizeof(buffer), true);
+}
+static void diagRFM69PollStatus(void)
+{
+	diagPrintSeparationLine();
+	MY_SERIALDEVICE.println(F("Press any key to exit"));
+	diagPrintSeparationLine();
+	diagFlushSerial();
+	while (!MY_SERIALDEVICE.available()) {
+		diagPrint(PSTR("IRQF1=0x%02" PRIX8 ", IRQF2=0x%02" PRIX8 ", IRQF=%" PRIu8 "\n"),
+		          RFM69_readReg(RFM69_REG_IRQFLAGS1),
+		          RFM69_readReg(RFM69_REG_IRQFLAGS2),
+		          RFM69_irq);
+		delay(300);
+	}
+	MY_SERIALDEVICE.println(F("Exiting..."));
+}
+static void diagRFM69DumpRegs(void)
+{
+	uint8_t i = 0;
+	do {
+		diagPrint(PSTR("Reg 0x%02" PRIX8 " = 0x%02" PRIX8 "\n"), i, RFM69_readReg(i));
+	} while (i++ != 0xFF);
+}
+static void diagRFM69Menu(void)
 {
 	RFM69_initialise(RFM69_868MHZ);
-	while (true) {
-		diagFlushSerial();
-		diagPrintSeparationLine();
-		MY_SERIALDEVICE.println(F("RFM69:\n"));
-		diagPrint(PSTR("SPI: MOSI=%" PRIu8 ", MISO=%" PRIu8 ", SCK=%" PRIu8 ", CS=%" PRIu8 ", IRQ=%" PRIu8
-		           "\n"),
-		      MOSI, MISO, SCK, MY_RFM69_CS_PIN, MY_RFM69_IRQ_PIN);
-		diagPrint(PSTR("RF: ID=%" PRIu8 ", FREQ=%" PRIu32 ", POW=%" PRIu8 "\n"),
-		      RFM69_getAddress(), RFM69_getFrequency(), RFM69_getTxPowerLevel());
+	diagPrint(PSTR("SPI: MOSI=%" PRIu8 ", MISO=%" PRIu8 ", SCK=%" PRIu8
+	               ", CS=%" PRIu8 ", IRQ=%" PRIu8 "\n"),
+	          MOSI, MISO, SCK, MY_RFM69_CS_PIN, MY_RFM69_IRQ_PIN);
+	diagPrint(PSTR("RF: ID=%" PRIu8 ", FREQ=%" PRIu32 ", POW=%" PRIu8 "\n"),
+	          RFM69_getAddress(), RFM69_getFrequency(), RFM69_getTxPowerLevel());
 
-		MY_SERIALDEVICE.println(F(
-		                            "[I] Init\n"
-		                            "[D] Dump REG\n"
-		                            "[Ax] ADDR=x\n"
-		                            "[Fx] FREQ=x\n"
-		                            "[Wx] POW=X\n"
-		                            "[L] SLP\n"
-		                            "[B] STDBY\n"
-		                            "[O] CAR on\n"
-		                            "[Q] CAR off\n"
-		                            "[R] RX\n"
-		                            "[Tx] TX to x\n"
-		                            "[P] Poll STAT\n"
-		                            "[X] Exit"
-		                        ));
-		diagPrintSeparationLine();
-		diagSerialInput();
-		if (inputCmd == 'I') {
-			RFM69_initialise(RFM69_868MHZ);
-		} else if (inputCmd == 'A') {
-			RFM69_setAddress(inputParameter.toInt());
-		} else if (inputCmd == 'F') {
-			RFM69_setFrequency(inputParameter.toInt());
-		} else if (inputCmd == 'W') {
-			RFM69_setTxPowerLevel(inputParameter.toInt());
-		} else if (inputCmd == 'L') {
-			RFM69_sleep();
-		} else if (inputCmd == 'B') {
-			RFM69_standBy();
-		} else if (inputCmd == 'R') {
-			(void)RFM69_setRadioMode(RFM69_RADIO_MODE_RX);
-		} else if (inputCmd == 'T') {
-			uint8_t buffer[] = { 'T','E','S','T','R','F','M','6','9' };
-			RFM69_sendWithRetry(inputParameter.toInt(), buffer, sizeof(buffer), true);
-		} else if (inputCmd == 'P') {
-			diagPrintSeparationLine();
-			MY_SERIALDEVICE.println(F("Press any key to exit"));
-			diagPrintSeparationLine();
-			diagFlushSerial();
-			while (!MY_SERIALDEVICE.available()) {
-				diagPrint(PSTR("IRQF1=0x%02" PRIX8 ", IRQF2=0x%02" PRIX8 ", IRQF=%" PRIu8 "\n"),
-				      RFM69_readReg(RFM69_REG_IRQFLAGS1), RFM69_readReg(RFM69_REG_IRQFLAGS2), RFM69_irq);
-				delay(300);
-			}
-			MY_SERIALDEVICE.println(F("Exiting..."));
-		} else if (inputCmd == 'O') {
-			(void)RFM69_setRadioMode(RFM69_RADIO_MODE_TX);
-		} else if (inputCmd == 'Q') {
-			(void)RFM69_setRadioMode(RFM69_RADIO_MODE_STDBY);
-		} else if (inputCmd == 'D') {
-			uint8_t i = 0;
-			do {
-				diagPrint(PSTR("Reg 0x%02" PRIX8 " = 0x%02" PRIX8 "\n"), i, RFM69_readReg(i));
-			} while (i++ != 0xFF);
-		} else if (inputCmd == 'X') {
-			return;
-		}
-	}
+	static const DiagMenuItem_t items[] = {
+		{ 'I', "Init",       diagRFM69Init      },
+		{ 'D', "Dump REG",   diagRFM69DumpRegs  },
+		{ 'A', "ADDR=x",     diagRFM69SetAddr   },
+		{ 'F', "FREQ=x",     diagRFM69SetFreq   },
+		{ 'W', "POW=x",      diagRFM69SetPower  },
+		{ 'L', "SLP",        diagRFM69Sleep     },
+		{ 'B', "STDBY",      diagRFM69Standby   },
+		{ 'O', "CAR on",     diagRFM69CarrierOn },
+		{ 'Q', "CAR off",    diagRFM69CarrierOff},
+		{ 'R', "RX",         diagRFM69RX        },
+		{ 'T', "TX to x",    diagRFM69TX        },
+		{ 'P', "Poll STAT",  diagRFM69PollStatus},
+	};
+	diagRunMenu("RFM69", items, (uint8_t)MY_ARRAYSIZE(items));
 }
 #endif
 
@@ -931,12 +924,12 @@ void diagnosticsMainMenu(void)
 			diagRF24Menu();
 #endif
 		} else if (inputCmd == '6') {
-#if defined(MY_RADIO_RFM69)
-			diagnosticsRFM69Menu();
+#if defined(MY_RADIO_RFM69) && defined(MY_RFM69_NEW_DRIVER)
+			diagRFM69Menu();
 #endif
 		} else if (inputCmd == '9') {
 #if defined(MY_RADIO_RFM95)
-			diagnosticsRFM95Menu();
+			diagRFM95Menu();
 #endif
 		} else if (inputCmd == 'R') {
 			hwReboot();
