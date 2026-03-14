@@ -25,7 +25,14 @@ static char inputCmd;
 static uint8_t inputBufferPosition;
 static String inputParameter;
 
-void diagnosticsFlushSerial(void)
+// file-scope — internal to MyDiagnostics.cpp, not in header
+struct DiagMenuItem_t {
+    char        cmd;
+    const char* label;  // RAM string — debug-only, flash savings not required
+    void        (*fn)(void);
+};
+
+static void diagFlushSerial(void)
 {
 	delay(100);
 	while (MY_SERIALDEVICE.available()) {
@@ -33,7 +40,7 @@ void diagnosticsFlushSerial(void)
 	}
 }
 
-void diagnosticsSerialInput(void)
+static void diagSerialInput(void)
 {
 	bool cmdReceived = false;
 	inputBufferPosition = 0;
@@ -47,14 +54,14 @@ void diagnosticsSerialInput(void)
 			}
 		}
 	}
-	diagnosticsFlushSerial();
+	diagFlushSerial();
 	// null termination
 	inputBuffer[inputBufferPosition] = 0;
 	inputParameter = String(&inputBuffer[1]);
 	inputCmd = toUpperCase(inputBuffer[0]);
 }
 
-void PRINT(const char *fmt, ...)
+static void diagPrint(const char *fmt, ...)
 {
 	char fmtBuffer[MY_SERIAL_OUTPUT_SIZE];
 	va_list args;
@@ -64,17 +71,17 @@ void PRINT(const char *fmt, ...)
 	MY_SERIALDEVICE.print(fmtBuffer);
 }
 
-void PrintHex8(const uint8_t* data, uint16_t length)
+static void diagPrintHex(const uint8_t* data, uint16_t length)
 {
 	for (uint16_t i = 0; i < length; ++i) {
-		PRINT(PSTR("%02" PRIX8 " "), data[i]);
+		diagPrint(PSTR("%02" PRIX8 " "), data[i]);
 		if ( ((i + 1u) % 16u == 0u) || (i + 1u == length) ) {
 			MY_SERIALDEVICE.println();
 		}
 	}
 }
 
-void diagnosticsPrintSeparationLine(void)
+static void diagPrintSeparationLine(void)
 {
 	for (uint8_t i = 0; i < 50; i++) {
 		MY_SERIALDEVICE.print("=");
@@ -82,88 +89,117 @@ void diagnosticsPrintSeparationLine(void)
 	MY_SERIALDEVICE.println();
 }
 
+static void diagRunMenu(const char* title, const DiagMenuItem_t* items, uint8_t count)
+{
+    while (true) {
+        diagPrintSeparationLine();
+        diagPrint(PSTR("%s:\n\n"), title);   // title is RAM — %s correct
+        for (uint8_t i = 0; i < count; i++) {
+            diagPrint(PSTR("[%c] %s\n"), items[i].cmd, items[i].label); // label is RAM
+        }
+        diagPrint(PSTR("[X] Exit\n"));
+        diagPrintSeparationLine();
+        diagFlushSerial();
+        diagSerialInput();
+        if (inputCmd == 'X') {
+            return;
+        }
+        bool found = false;
+        for (uint8_t i = 0; i < count; i++) {
+            if (inputCmd == items[i].cmd) {
+                items[i].fn();
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            diagPrint(PSTR("!CMD\n"));
+        }
+    }
+}
+
 void diagnosticsMySensorsEEPROMDump(void)
 {
 	uint8_t buffer[256];
-	PRINT(PSTR("> MYS E2P START: 0x%04" PRIX16 "\n"), EEPROM_START);
+	diagPrint(PSTR("> MYS E2P START: 0x%04" PRIX16 "\n"), EEPROM_START);
 
 	MY_SERIALDEVICE.print(F("> NODE_ID="));
 	hwReadConfigBlock(buffer, reinterpret_cast<void *>(EEPROM_NODE_ID_ADDRESS), SIZE_NODE_ID);
-	PrintHex8(buffer, SIZE_NODE_ID);
+	diagPrintHex(buffer, SIZE_NODE_ID);
 
 	MY_SERIALDEVICE.print(F("> PAR_ID="));
 	hwReadConfigBlock(buffer, reinterpret_cast<void *>(EEPROM_PARENT_NODE_ID_ADDRESS),
 	                  SIZE_PARENT_NODE_ID);
-	PrintHex8(buffer, SIZE_PARENT_NODE_ID);
+	diagPrintHex(buffer, SIZE_PARENT_NODE_ID);
 
 	MY_SERIALDEVICE.print(F("> D_GW="));
 	hwReadConfigBlock(buffer, reinterpret_cast<void *>(EEPROM_DISTANCE_ADDRESS), SIZE_DISTANCE);
-	PrintHex8(buffer, SIZE_DISTANCE);
+	diagPrintHex(buffer, SIZE_DISTANCE);
 
 	MY_SERIALDEVICE.println(F("> RTE TABLE:"));
 	hwReadConfigBlock(buffer, reinterpret_cast<void *>(EEPROM_ROUTES_ADDRESS), SIZE_ROUTES);
-	PrintHex8(buffer, SIZE_ROUTES);
+	diagPrintHex(buffer, SIZE_ROUTES);
 
 	MY_SERIALDEVICE.println(F("> CTRL_CFG:"));
 	hwReadConfigBlock(buffer, reinterpret_cast<void *>(EEPROM_CONTROLLER_CONFIG_ADDRESS),
 	                  SIZE_CONTROLLER_CONFIG);
-	PrintHex8(buffer, SIZE_CONTROLLER_CONFIG);
+	diagPrintHex(buffer, SIZE_CONTROLLER_CONFIG);
 
 	MY_SERIALDEVICE.print(F("> PERS_CRC="));
 	hwReadConfigBlock(buffer, reinterpret_cast<void *>(EEPROM_PERSONALIZATION_CHECKSUM_ADDRESS),
 	                  SIZE_PERSONALIZATION_CHECKSUM);
-	PrintHex8(buffer, SIZE_PERSONALIZATION_CHECKSUM);
+	diagPrintHex(buffer, SIZE_PERSONALIZATION_CHECKSUM);
 
 	MY_SERIALDEVICE.print(F("> FW_TYPE="));
 	hwReadConfigBlock(buffer, reinterpret_cast<void *>(EEPROM_FIRMWARE_TYPE_ADDRESS),
 	                  SIZE_PERSONALIZATION_CHECKSUM);
-	PrintHex8(buffer, SIZE_PERSONALIZATION_CHECKSUM);
+	diagPrintHex(buffer, SIZE_PERSONALIZATION_CHECKSUM);
 
 	MY_SERIALDEVICE.print(F("> FW_VERS="));
 	hwReadConfigBlock(buffer, reinterpret_cast<void *>(EEPROM_FIRMWARE_VERSION_ADDRESS),
 	                  SIZE_FIRMWARE_VERSION);
-	PrintHex8(buffer, SIZE_FIRMWARE_VERSION);
+	diagPrintHex(buffer, SIZE_FIRMWARE_VERSION);
 
 	MY_SERIALDEVICE.print(F("> FW_BLOCKS="));
 	hwReadConfigBlock(buffer, reinterpret_cast<void *>(EEPROM_FIRMWARE_BLOCKS_ADDRESS),
 	                  SIZE_FIRMWARE_BLOCKS);
-	PrintHex8(buffer, SIZE_FIRMWARE_BLOCKS);
+	diagPrintHex(buffer, SIZE_FIRMWARE_BLOCKS);
 
 	MY_SERIALDEVICE.print(F("> FW_CRC="));
 	hwReadConfigBlock(buffer, reinterpret_cast<void *>(EEPROM_FIRMWARE_CRC_ADDRESS), SIZE_FIRMWARE_CRC);
-	PrintHex8(buffer, SIZE_FIRMWARE_CRC);
+	diagPrintHex(buffer, SIZE_FIRMWARE_CRC);
 
 	MY_SERIALDEVICE.println(F("> SGN_REQ_TABLE:"));
 	hwReadConfigBlock(buffer, reinterpret_cast<void *>(EEPROM_SIGNING_REQUIREMENT_TABLE_ADDRESS),
 	                  SIZE_SIGNING_REQUIREMENT_TABLE);
-	PrintHex8(buffer, SIZE_SIGNING_REQUIREMENT_TABLE);
+	diagPrintHex(buffer, SIZE_SIGNING_REQUIREMENT_TABLE);
 
 	MY_SERIALDEVICE.println(F("> WL_REQ_TABLE:"));
 	hwReadConfigBlock(buffer, reinterpret_cast<void *>(EEPROM_WHITELIST_REQUIREMENT_TABLE_ADDRESS),
 	                  SIZE_WHITELIST_REQUIREMENT_TABLE);
-	PrintHex8(buffer, SIZE_WHITELIST_REQUIREMENT_TABLE);
+	diagPrintHex(buffer, SIZE_WHITELIST_REQUIREMENT_TABLE);
 
 	MY_SERIALDEVICE.println(F("> SGN_SOFT_KEY:"));
 	hwReadConfigBlock(buffer, reinterpret_cast<void *>(EEPROM_SIGNING_SOFT_HMAC_KEY_ADDRESS),
 	                  SIZE_SIGNING_SOFT_HMAC_KEY);
-	PrintHex8(buffer, SIZE_SIGNING_SOFT_HMAC_KEY);
+	diagPrintHex(buffer, SIZE_SIGNING_SOFT_HMAC_KEY);
 
 	MY_SERIALDEVICE.println(F("> SGN_SOFT_SER:"));
 	hwReadConfigBlock(buffer, reinterpret_cast<void *>(EEPROM_SIGNING_SOFT_SERIAL_ADDRESS),
 	                  SIZE_SIGNING_SOFT_SERIAL);
-	PrintHex8(buffer, SIZE_SIGNING_SOFT_SERIAL);
+	diagPrintHex(buffer, SIZE_SIGNING_SOFT_SERIAL);
 
 	MY_SERIALDEVICE.println(F("> AES_KEY:"));
 	hwReadConfigBlock(buffer, reinterpret_cast<void *>(EEPROM_RF_ENCRYPTION_AES_KEY_ADDRESS),
 	                  SIZE_RF_ENCRYPTION_AES_KEY);
-	PrintHex8(buffer, SIZE_RF_ENCRYPTION_AES_KEY);
+	diagPrintHex(buffer, SIZE_RF_ENCRYPTION_AES_KEY);
 
 	MY_SERIALDEVICE.print(F("> NL_CNT="));
 	hwReadConfigBlock(buffer, reinterpret_cast<void *>(EEPROM_NODE_LOCK_COUNTER_ADDRESS),
 	                  SIZE_NODE_LOCK_COUNTER);
-	PrintHex8(buffer, SIZE_NODE_LOCK_COUNTER);
+	diagPrintHex(buffer, SIZE_NODE_LOCK_COUNTER);
 
-	PRINT(PSTR("> USER E2P >= 0x%04" PRIX16 "\n"), EEPROM_LOCAL_CONFIG_ADDRESS);
+	diagPrint(PSTR("> USER E2P >= 0x%04" PRIX16 "\n"), EEPROM_LOCAL_CONFIG_ADDRESS);
 }
 
 void diagnosticsClearMySensorsEEPROMConfig(void)
@@ -171,7 +207,7 @@ void diagnosticsClearMySensorsEEPROMConfig(void)
 	for (uint16_t i = EEPROM_START; i < EEPROM_START + EEPROM_LOCAL_CONFIG_ADDRESS; i++) {
 		hwWriteConfig(i, 0xFF);
 		if (hwReadConfig(i) != 0xFF) {
-			PRINT(PSTR("!ERR POS 0x02%" PRIX8 "\n"), i);
+			diagPrint(PSTR("!ERR POS 0x02%" PRIX8 "\n"), i);
 		}
 	}
 	MY_SERIALDEVICE.println(F("> E2P CLR"));
@@ -182,7 +218,7 @@ void diagnosticsClearMySensorsRoutingTable(void)
 	for (uint16_t i = 0; i < SIZE_ROUTES; i++) {
 		hwWriteConfig(EEPROM_ROUTES_ADDRESS + i, 0xFF);
 		if (hwReadConfig(EEPROM_ROUTES_ADDRESS + i) != 0xFF) {
-			PRINT(PSTR("!ERR POS 0x02%" PRIu8 "\n"), i);
+			diagPrint(PSTR("!ERR POS 0x02%" PRIu8 "\n"), i);
 		}
 	}
 	MY_SERIALDEVICE.println(F("> RTE TABLE CLR"));
@@ -213,7 +249,7 @@ void diagnosticsEEPROMTest(void)
 		if (hwReadConfig(i + EEPROM_START) == 0xAA) {
 			success++;
 		} else {
-			PRINT(PSTR("!ERR POS 0x02%" PRIu8 "\n"), i + EEPROM_START);
+			diagPrint(PSTR("!ERR POS 0x02%" PRIu8 "\n"), i + EEPROM_START);
 		}
 		hwWriteConfig(i + EEPROM_START, 0x55);
 		if (hwReadConfig(i + EEPROM_START) == 0x55) {
@@ -224,7 +260,7 @@ void diagnosticsEEPROMTest(void)
 		if (hwReadConfig(i + EEPROM_START) == originalContent) {
 			success++;
 		} else {
-			PRINT(PSTR("!ERR POS 0x02%" PRIu8 "\n"), i + EEPROM_START);
+			diagPrint(PSTR("!ERR POS 0x02%" PRIu8 "\n"), i + EEPROM_START);
 		}
 	}
 	MY_SERIALDEVICE.print(F("\n>E2P check: "));
@@ -239,7 +275,7 @@ void diagnosticsEEPROMTest(void)
 void diagnosticsEEPROMMenu(void)
 {
 	while (true) {
-		diagnosticsPrintSeparationLine();
+		diagPrintSeparationLine();
 		MY_SERIALDEVICE.println(F("EEPROM:\n\n"
 		                          "[D] Dump\n"
 		                          "[T] Test\n"
@@ -248,9 +284,9 @@ void diagnosticsEEPROMMenu(void)
 		                          "[S] CLR TSP CFG\n"
 		                          "[X] Exit"
 		                         ));
-		diagnosticsPrintSeparationLine();
-		diagnosticsFlushSerial();
-		diagnosticsSerialInput();
+		diagPrintSeparationLine();
+		diagFlushSerial();
+		diagSerialInput();
 		if (inputCmd == 'D') {
 			diagnosticsMySensorsEEPROMDump();
 		} else if (inputCmd == 'T') {
@@ -285,11 +321,11 @@ bool diagnosticsCryptoMenu(void)
 	AES128CBCInit(test_psk);
 #if defined(CRYPTO_OUTPUT)
 	MY_SERIALDEVICE.println(F("AES128CBC input:"));
-	PrintHex8(test_data, sizeof(test_data));
+	diagPrintHex(test_data, sizeof(test_data));
 	MY_SERIALDEVICE.println(F("AES128CBC key:"));
-	PrintHex8(test_psk, sizeof(test_psk));
+	diagPrintHex(test_psk, sizeof(test_psk));
 	MY_SERIALDEVICE.println(F("AES128CBC IV:"));
-	PrintHex8(aes_iv, sizeof(aes_iv));
+	diagPrintHex(aes_iv, sizeof(aes_iv));
 #endif
 	uint8_t temp_iv[16];
 	uint8_t temp_data[64];
@@ -310,7 +346,7 @@ bool diagnosticsCryptoMenu(void)
 		MY_SERIALDEVICE.println(F("FAIL!"));
 	};
 #if defined(CRYPTO_OUTPUT)
-	PrintHex8(temp_data, sizeof(test_data));
+	diagPrintHex(temp_data, sizeof(test_data));
 #endif
 	(void)memcpy(temp_iv, aes_iv, sizeof(aes_iv));
 	AES128CBCDecrypt(temp_iv, temp_data, sizeof(temp_data));
@@ -321,22 +357,22 @@ bool diagnosticsCryptoMenu(void)
 		MY_SERIALDEVICE.println(F("FAIL!"));
 	};
 #if defined(CRYPTO_OUTPUT)
-	PrintHex8(temp_data, sizeof(temp_data));
+	diagPrintHex(temp_data, sizeof(temp_data));
 #endif
 	MY_SERIALDEVICE.print(F("- SHA256: "));
 	uint8_t dest[64];
 	SHA256(dest, test_data, sizeof(test_data));
 #if defined(CRYPTO_OUTPUT)
 	MY_SERIALDEVICE.println(F("SHA256 input:"));
-	PrintHex8(test_data, sizeof(test_data));
+	diagPrintHex(test_data, sizeof(test_data));
 	MY_SERIALDEVICE.println(F("SHA256 output:"));
-	PrintHex8(dest, 32);
+	diagPrintHex(dest, 32);
 #endif
 	// result verified here: http://extranet.cryptomathic.com/hashcalc/index
 	const uint8_t sha256result[32] = { 0x51,0x3f,0xa7,0x82,0x3d,0xc3,0x05,0x3d,0xc6,0x43,0xa4,0x4b,0x8f,0xb8,0xdd,0x62,
 	                                   0x36,0x0b,0x00,0x44,0xf1,0xab,0x69,0x65,0xf8,0x36,0x29,0xd2,0xb1,0x64,0xbf,0x14
 	                                 };
-	//PRINT(PSTR("SHA256 test: "));
+	//diagPrint(PSTR("SHA256 test: "));
 	if (memcmp(dest, &sha256result, sizeof(sha256result)) == 0) {
 		MY_SERIALDEVICE.println(F("OK"));
 	} else {
@@ -346,20 +382,20 @@ bool diagnosticsCryptoMenu(void)
 	MY_SERIALDEVICE.print(F("- HMAC SHA256: "));
 #if defined(CRYPTO_OUTPUT)
 	MY_SERIALDEVICE.println(F("HMAC input:"));
-	PrintHex8(test_data, sizeof(test_data));
+	diagPrintHex(test_data, sizeof(test_data));
 	MY_SERIALDEVICE.println(F("HMAC key:"));
-	PrintHex8(test_psk, sizeof(test_psk));
+	diagPrintHex(test_psk, sizeof(test_psk));
 #endif
 	SHA256HMAC(dest, test_psk, sizeof(test_psk), test_data, sizeof(test_data));
 #if defined(CRYPTO_OUTPUT)
 	MY_SERIALDEVICE.println(F("HMAC output:"));
-	PrintHex8(dest, sizeof(dest));
+	diagPrintHex(dest, sizeof(dest));
 #endif
 	// result verified here: http://extranet.cryptomathic.com/hmaccalc/index
 	const uint8_t hmacresult[32] = { 0xcc,0xa7,0x5f,0x5d,0xd5,0xeb,0x50,0x34,0x02,0x53,0x12,0x17,0x40,0x72,0xaf,0x29,
 	                                 0xe6,0xc9,0xb5,0xb1,0x9b,0x26,0x8b,0x23,0x0f,0x5c,0xeb,0x50,0x24,0x63,0xc2,0x33
 	                               };
-	//PRINT(PSTR("HMAC test: "));
+	//diagPrint(PSTR("HMAC test: "));
 	if (memcmp(dest, &hmacresult, sizeof(sha256result)) == 0) {
 		MY_SERIALDEVICE.println(F("OK"));
 	} else {
@@ -377,7 +413,7 @@ bool diagnosticsCryptoMenu(void)
 	}
 	stopMS = hwMillis();
 	if (u8 == 171) {
-		PRINT(PSTR("OK, %" PRIu32 " ms\n"), stopMS - startMS);
+		diagPrint(PSTR("OK, %" PRIu32 " ms\n"), stopMS - startMS);
 	} else {
 		MY_SERIALDEVICE.println(F("FAIL!"));
 	}
@@ -391,7 +427,7 @@ bool diagnosticsCryptoMenu(void)
 	}
 	stopMS = hwMillis();
 	if (u16 == 43691) {
-		PRINT(PSTR("OK, %" PRIu32 " ms\n"), stopMS - startMS);
+		diagPrint(PSTR("OK, %" PRIu32 " ms\n"), stopMS - startMS);
 	} else {
 		MY_SERIALDEVICE.println(F("FAIL!"));
 	}
@@ -405,7 +441,7 @@ bool diagnosticsCryptoMenu(void)
 	}
 	stopMS = hwMillis();
 	if (u32 == 3664423595) {
-		PRINT(PSTR("OK, %" PRIu32 " ms\n"), stopMS - startMS);
+		diagPrint(PSTR("OK, %" PRIu32 " ms\n"), stopMS - startMS);
 	} else {
 		MY_SERIALDEVICE.println(F("FAIL!"));
 	}
@@ -439,13 +475,13 @@ void diagnosticsRFM69Menu(void)
 {
 	RFM69_initialise(RFM69_868MHZ);
 	while (true) {
-		diagnosticsFlushSerial();
-		diagnosticsPrintSeparationLine();
+		diagFlushSerial();
+		diagPrintSeparationLine();
 		MY_SERIALDEVICE.println(F("RFM69:\n"));
-		PRINT(PSTR("SPI: MOSI=%" PRIu8 ", MISO=%" PRIu8 ", SCK=%" PRIu8 ", CS=%" PRIu8 ", IRQ=%" PRIu8
+		diagPrint(PSTR("SPI: MOSI=%" PRIu8 ", MISO=%" PRIu8 ", SCK=%" PRIu8 ", CS=%" PRIu8 ", IRQ=%" PRIu8
 		           "\n"),
 		      MOSI, MISO, SCK, MY_RFM69_CS_PIN, MY_RFM69_IRQ_PIN);
-		PRINT(PSTR("RF: ID=%" PRIu8 ", FREQ=%" PRIu32 ", POW=%" PRIu8 "\n"),
+		diagPrint(PSTR("RF: ID=%" PRIu8 ", FREQ=%" PRIu32 ", POW=%" PRIu8 "\n"),
 		      RFM69_getAddress(), RFM69_getFrequency(), RFM69_getTxPowerLevel());
 
 		MY_SERIALDEVICE.println(F(
@@ -463,8 +499,8 @@ void diagnosticsRFM69Menu(void)
 		                            "[P] Poll STAT\n"
 		                            "[X] Exit"
 		                        ));
-		diagnosticsPrintSeparationLine();
-		diagnosticsSerialInput();
+		diagPrintSeparationLine();
+		diagSerialInput();
 		if (inputCmd == 'I') {
 			RFM69_initialise(RFM69_868MHZ);
 		} else if (inputCmd == 'A') {
@@ -483,12 +519,12 @@ void diagnosticsRFM69Menu(void)
 			uint8_t buffer[] = { 'T','E','S','T','R','F','M','6','9' };
 			RFM69_sendWithRetry(inputParameter.toInt(), buffer, sizeof(buffer), true);
 		} else if (inputCmd == 'P') {
-			diagnosticsPrintSeparationLine();
+			diagPrintSeparationLine();
 			MY_SERIALDEVICE.println(F("Press any key to exit"));
-			diagnosticsPrintSeparationLine();
-			diagnosticsFlushSerial();
+			diagPrintSeparationLine();
+			diagFlushSerial();
 			while (!MY_SERIALDEVICE.available()) {
-				PRINT(PSTR("IRQF1=0x%02" PRIX8 ", IRQF2=0x%02" PRIX8 ", IRQF=%" PRIu8 "\n"),
+				diagPrint(PSTR("IRQF1=0x%02" PRIX8 ", IRQF2=0x%02" PRIX8 ", IRQF=%" PRIu8 "\n"),
 				      RFM69_readReg(RFM69_REG_IRQFLAGS1), RFM69_readReg(RFM69_REG_IRQFLAGS2), RFM69_irq);
 				delay(300);
 			}
@@ -500,7 +536,7 @@ void diagnosticsRFM69Menu(void)
 		} else if (inputCmd == 'D') {
 			uint8_t i = 0;
 			do {
-				PRINT(PSTR("Reg 0x%02" PRIX8 " = 0x%02" PRIX8 "\n"), i, RFM69_readReg(i));
+				diagPrint(PSTR("Reg 0x%02" PRIX8 " = 0x%02" PRIX8 "\n"), i, RFM69_readReg(i));
 			} while (i++ != 0xFF);
 		} else if (inputCmd == 'X') {
 			return;
@@ -514,12 +550,12 @@ void diagnosticsRF24Menu(void)
 {
 	RF24_initialize();
 	while (true) {
-		diagnosticsFlushSerial();
-		diagnosticsPrintSeparationLine();
+		diagFlushSerial();
+		diagPrintSeparationLine();
 		MY_SERIALDEVICE.println(F("RF24:\n"));
-		PRINT(PSTR("SPI: MOSI=%" PRIu8 ", MISO=%" PRIu8 ", SCK=%" PRIu8 ", CS=%" PRIu8 ", CE=%" PRIu8 "\n"),
+		diagPrint(PSTR("SPI: MOSI=%" PRIu8 ", MISO=%" PRIu8 ", SCK=%" PRIu8 ", CS=%" PRIu8 ", CE=%" PRIu8 "\n"),
 		      MOSI, MISO, SCK, MY_RF24_CS_PIN, MY_RF24_CE_PIN);
-		PRINT(PSTR("RF: ADDR=%" PRIu8 ", CH=%" PRIu8 ", POW=%" PRIu8 ", CFG=%" PRIu8 "\n"),
+		diagPrint(PSTR("RF: ADDR=%" PRIu8 ", CH=%" PRIu8 ", POW=%" PRIu8 ", CFG=%" PRIu8 "\n"),
 		      RF24_getNodeID(),
 		      RF24_getChannel(), RF24_getRawTxPowerLevel(), RF24_getRFConfiguration());
 
@@ -538,8 +574,8 @@ void diagnosticsRF24Menu(void)
 		                          "[S] Scan CHs\n"
 		                          "[X] Exit"
 		                         ));
-		diagnosticsPrintSeparationLine();
-		diagnosticsSerialInput();
+		diagPrintSeparationLine();
+		diagSerialInput();
 		if (inputCmd == 'I') {
 			RF24_initialize();
 		} else if (inputCmd == 'A') {
@@ -558,12 +594,12 @@ void diagnosticsRF24Menu(void)
 			uint8_t buffer[] = { 'T','E','S','T','R','F','2','4' };
 			RF24_sendMessage(inputParameter.toInt(), buffer, sizeof(buffer), false);
 		} else if (inputCmd == 'P') {
-			diagnosticsPrintSeparationLine();
+			diagPrintSeparationLine();
 			MY_SERIALDEVICE.println(F("Press any key to exit"));
-			diagnosticsPrintSeparationLine();
-			diagnosticsFlushSerial();
+			diagPrintSeparationLine();
+			diagFlushSerial();
 			while (!MY_SERIALDEVICE.available()) {
-				PRINT(PSTR("status=%02" PRIX8 "\n"), RF24_getStatus());
+				diagPrint(PSTR("status=%02" PRIX8 "\n"), RF24_getStatus());
 				delay(300);
 			}
 			MY_SERIALDEVICE.println(F("Exiting..."));
@@ -574,39 +610,39 @@ void diagnosticsRF24Menu(void)
 		} else if (inputCmd == 'D') {
 			//uint8_t buffer[16];
 			for (uint8_t i = 0; i < 0x20; i++) {
-				PRINT(PSTR("Reg 0x%02" PRIX8 " = 0x%02" PRIX8 "\n"), i, RF24_readByteRegister(i));
+				diagPrint(PSTR("Reg 0x%02" PRIX8 " = 0x%02" PRIX8 "\n"), i, RF24_readByteRegister(i));
 				/*
 				(void)RF24_readMultiByteRegister(i, buffer, sizeof(buffer));
-				PrintHex8(buffer, sizeof(buffer));
+				diagPrintHex(buffer, sizeof(buffer));
 				for (uint8_t cnt = 0; cnt < sizeof(buffer); cnt++) {
 					buffer[cnt] = 0xFF;
 				}
 				(void)RF24_writeMultiByteRegister(i, buffer, sizeof(buffer));
 				(void)RF24_readMultiByteRegister(i, buffer, sizeof(buffer));
-				PrintHex8(buffer, sizeof(buffer));
+				diagPrintHex(buffer, sizeof(buffer));
 
 				for (uint8_t cnt = 0; cnt < sizeof(buffer); cnt++) {
 					buffer[cnt] = 0x00;
 				}
 				(void)RF24_writeMultiByteRegister(i, buffer, sizeof(buffer));
 				(void)RF24_readMultiByteRegister(i, buffer, sizeof(buffer));
-				PrintHex8(buffer, sizeof(buffer));
+				diagPrintHex(buffer, sizeof(buffer));
 				*/
 			}
 		} else if (inputCmd == 'S') {
 
 			MY_SERIALDEVICE.println(F("Press any key to exit"));
-			diagnosticsFlushSerial();
+			diagFlushSerial();
 
 			const uint8_t num_channels = 126;
 
 			for(uint8_t i = 0; i < num_channels; i++) {
-				PRINT(PSTR("%" PRIX8), i >> 4);
+				diagPrint(PSTR("%" PRIX8), i >> 4);
 			}
 			MY_SERIALDEVICE.println();
 
 			for (uint8_t i = 0; i < num_channels; i++) {
-				PRINT(PSTR("%" PRIX8), i & 0xf);
+				diagPrint(PSTR("%" PRIX8), i & 0xf);
 			}
 
 			MY_SERIALDEVICE.println();
@@ -633,7 +669,7 @@ void diagnosticsRF24Menu(void)
 				}
 
 				for (uint8_t i = 0; i < num_channels; i++) {
-					PRINT(PSTR("%" PRIX8), min(0xf, values[i]));
+					diagPrint(PSTR("%" PRIX8), min(0xf, values[i]));
 				}
 
 				MY_SERIALDEVICE.println();
@@ -649,7 +685,7 @@ void diagnosticsRF24Menu(void)
 #if defined(MY_SENSOR_NETWORK)
 void diagnosticsTSMStatus(void)
 {
-	PRINT(PSTR("%" PRIu32 " TSM,%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu32 ",%" PRIu32 ",%" PRIu8 ",%"
+	diagPrint(PSTR("%" PRIu32 " TSM,%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu32 ",%" PRIu32 ",%" PRIu8 ",%"
 	           PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 "\n"),
 	      hwMillis(),
 	      transportSanityCheck(),
@@ -671,10 +707,10 @@ void diagnosticsTSMStatus(void)
 void diagnosticsTransportSM(void)
 {
 	while (true) {
-		diagnosticsPrintSeparationLine();
+		diagPrintSeparationLine();
 		MY_SERIALDEVICE.println(F("TSP SM:\n"));
 #if defined(MY_SENSOR_NETWORK)
-		PRINT(PSTR("ADDR=%" PRIu8 ",PAR=%" PRIu8 ",DGW=%" PRIu8 ",TSP=%" PRIu8 "\n"), getNodeId(),
+		diagPrint(PSTR("ADDR=%" PRIu8 ",PAR=%" PRIu8 ",DGW=%" PRIu8 ",TSP=%" PRIu8 "\n"), getNodeId(),
 		      getDistanceGW(), getParentNodeId(),
 		      isTransportReady());
 		MY_SERIALDEVICE.println(F("[I] Init TSP\n"
@@ -683,9 +719,9 @@ void diagnosticsTransportSM(void)
 		                         ));
 #endif
 		MY_SERIALDEVICE.println(F("[X] Exit"));
-		diagnosticsPrintSeparationLine();
-		diagnosticsFlushSerial();
-		diagnosticsSerialInput();
+		diagPrintSeparationLine();
+		diagFlushSerial();
+		diagSerialInput();
 		if (inputCmd == 'I') {
 #if defined(MY_SENSOR_NETWORK)
 			transportInitialise();
@@ -712,7 +748,7 @@ void diagnosticsTransportSM(void)
 			bool exitSignal = false;
 			while (!exitSignal) {
 				if (MY_SERIALDEVICE.available()) {
-					diagnosticsSerialInput();
+					diagSerialInput();
 					if (inputCmd == 'U') {
 						transportCheckUplink();
 					} else if (inputCmd == 'F') {
@@ -779,63 +815,63 @@ void diagnosticsMCUMenu(void)
 	MY_SERIALDEVICE.println(F("ARCH: Unknown"));
 #endif
 #if defined(ARDUINO_ARCH_AVR)
-	PRINT(PSTR("AVR fuses: L:%02" PRIX8 ",H:%02" PRIX8 ",E:%02" PRIX8 ",LK:%02" PRIX8
+	diagPrint(PSTR("AVR fuses: L:%02" PRIX8 ",H:%02" PRIX8 ",E:%02" PRIX8 ",LK:%02" PRIX8
 	           "\n"),
 	      boot_lock_fuse_bits_get(GET_LOW_FUSE_BITS),
 	      boot_lock_fuse_bits_get(GET_HIGH_FUSE_BITS),
 	      boot_lock_fuse_bits_get(GET_EXTENDED_FUSE_BITS),
 	      boot_lock_fuse_bits_get(GET_LOCK_BITS));
 #endif
-	PRINT(PSTR("T_CPU: %" PRIi8 " C\n"), hwCPUTemperature());
-	PRINT(PSTR("V_CPU: %" PRIu16 " mV\n"), hwCPUVoltage());
+	diagPrint(PSTR("T_CPU: %" PRIi8 " C\n"), hwCPUTemperature());
+	diagPrint(PSTR("V_CPU: %" PRIu16 " mV\n"), hwCPUVoltage());
 	MY_SERIALDEVICE.print(F("F_CPU: "));
 	MY_SERIALDEVICE.print(hwCPUFrequency() / 10.0);
 	MY_SERIALDEVICE.println(F(" MHz"));
 	MY_SERIALDEVICE.print(F("CPU ID: "));
 	unique_id_t ID;
 	const bool result = hwUniqueID(&ID);
-	PrintHex8(ID, sizeof(ID));
-	PRINT(PSTR("UID unique: %s\n"), result ? "true" : "false");
+	diagPrintHex(ID, sizeof(ID));
+	diagPrint(PSTR("UID unique: %s\n"), result ? "true" : "false");
 #if defined(MY_HW_HAS_GETENTROPY)
 	MY_SERIALDEVICE.println(F("RNG: True"));
 #else
 	MY_SERIALDEVICE.println(F("RNG: Pseudo"));
 #endif
 #if defined(ARDUINO_ARCH_ESP32)
-	PRINT(PSTR("Chip rev: %" PRIu8 "\n"), ESP.getChipRevision());
-	PRINT(PSTR("Cycles: %" PRIu32 "\n"), ESP.getCycleCount());
-	PRINT(PSTR("SDK: %s\n"), ESP.getSdkVersion());
-	PRINT(PSTR("EFUSE: %16" PRIX64 "\n"), ESP.getEfuseMac());
-	PRINT(PSTR("Total HEAP size: %" PRIu32 "\n"), ESP.getHeapSize());
-	PRINT(PSTR("Free HEAP size: %" PRIu32 "\n"), ESP.getFreeHeap());
-	PRINT(PSTR("Min HEAP level: %" PRIu32 "\n"), ESP.getMinFreeHeap());
-	PRINT(PSTR("Max HEAP alloc: %" PRIu32 "\n"), ESP.getMaxAllocHeap());
-	PRINT(PSTR("PSRAM size: %" PRIu32 "\n"), ESP.getPsramSize());
-	PRINT(PSTR("Free PSRAM: %" PRIu32 "\n"), ESP.getFreePsram());
-	PRINT(PSTR("Min PSRAM level: %" PRIu32 "\n"), ESP.getMinFreePsram());
-	PRINT(PSTR("Max PSRAM alloc: %" PRIu32 "\n"), ESP.getMaxAllocPsram());
-	PRINT(PSTR("Flash size: %" PRIu32 "\n"), ESP.getFlashChipSize());
-	PRINT(PSTR("Flash speed: %" PRIu32 "\n"), ESP.getFlashChipSpeed());
-	PRINT(PSTR("Sketch size: %" PRIu32 "\n"), ESP.getSketchSize());
-	PRINT(PSTR("Free sketch space: %" PRIu32 "\n"), ESP.getFreeSketchSpace());
+	diagPrint(PSTR("Chip rev: %" PRIu8 "\n"), ESP.getChipRevision());
+	diagPrint(PSTR("Cycles: %" PRIu32 "\n"), ESP.getCycleCount());
+	diagPrint(PSTR("SDK: %s\n"), ESP.getSdkVersion());
+	diagPrint(PSTR("EFUSE: %16" PRIX64 "\n"), ESP.getEfuseMac());
+	diagPrint(PSTR("Total HEAP size: %" PRIu32 "\n"), ESP.getHeapSize());
+	diagPrint(PSTR("Free HEAP size: %" PRIu32 "\n"), ESP.getFreeHeap());
+	diagPrint(PSTR("Min HEAP level: %" PRIu32 "\n"), ESP.getMinFreeHeap());
+	diagPrint(PSTR("Max HEAP alloc: %" PRIu32 "\n"), ESP.getMaxAllocHeap());
+	diagPrint(PSTR("PSRAM size: %" PRIu32 "\n"), ESP.getPsramSize());
+	diagPrint(PSTR("Free PSRAM: %" PRIu32 "\n"), ESP.getFreePsram());
+	diagPrint(PSTR("Min PSRAM level: %" PRIu32 "\n"), ESP.getMinFreePsram());
+	diagPrint(PSTR("Max PSRAM alloc: %" PRIu32 "\n"), ESP.getMaxAllocPsram());
+	diagPrint(PSTR("Flash size: %" PRIu32 "\n"), ESP.getFlashChipSize());
+	diagPrint(PSTR("Flash speed: %" PRIu32 "\n"), ESP.getFlashChipSpeed());
+	diagPrint(PSTR("Sketch size: %" PRIu32 "\n"), ESP.getSketchSize());
+	diagPrint(PSTR("Free sketch space: %" PRIu32 "\n"), ESP.getFreeSketchSpace());
 #endif
 
 #if defined(ARDUINO_ARCH_ESP8266)
-	PRINT(PSTR("Chip id: %08" PRIX32 "\n"), ESP.getChipId());
-	PRINT(PSTR("Cycles: %" PRIu32 "\n"), ESP.getCycleCount());
-	PRINT(PSTR("SDK: %s\n"), ESP.getSdkVersion());
-	PRINT(PSTR("Free HEAP size: %" PRIu32 "\n"), ESP.getFreeHeap());
-	PRINT(PSTR("HEAP fragmentation: %" PRIu8 "\n"), ESP.getHeapFragmentation());
-	PRINT(PSTR("Max block alloc: %" PRIu32 "\n"), ESP.getMaxFreeBlockSize());
-	PRINT(PSTR("Flash id: %08" PRIX32 "\n"), ESP.getFlashChipId());
-	PRINT(PSTR("Flash size: %" PRIu32 "\n"), ESP.getFlashChipSize());
-	PRINT(PSTR("Flash speed: %" PRIu32 "\n"), ESP.getFlashChipSpeed());
-	PRINT(PSTR("Sketch size: %" PRIu32 "\n"), ESP.getSketchSize());
-	PRINT(PSTR("Free sketch space: %" PRIu32 "\n"), ESP.getFreeSketchSpace());
+	diagPrint(PSTR("Chip id: %08" PRIX32 "\n"), ESP.getChipId());
+	diagPrint(PSTR("Cycles: %" PRIu32 "\n"), ESP.getCycleCount());
+	diagPrint(PSTR("SDK: %s\n"), ESP.getSdkVersion());
+	diagPrint(PSTR("Free HEAP size: %" PRIu32 "\n"), ESP.getFreeHeap());
+	diagPrint(PSTR("HEAP fragmentation: %" PRIu8 "\n"), ESP.getHeapFragmentation());
+	diagPrint(PSTR("Max block alloc: %" PRIu32 "\n"), ESP.getMaxFreeBlockSize());
+	diagPrint(PSTR("Flash id: %08" PRIX32 "\n"), ESP.getFlashChipId());
+	diagPrint(PSTR("Flash size: %" PRIu32 "\n"), ESP.getFlashChipSize());
+	diagPrint(PSTR("Flash speed: %" PRIu32 "\n"), ESP.getFlashChipSpeed());
+	diagPrint(PSTR("Sketch size: %" PRIu32 "\n"), ESP.getSketchSize());
+	diagPrint(PSTR("Free sketch space: %" PRIu32 "\n"), ESP.getFreeSketchSpace());
 #endif
 	while (true) {
 
-		diagnosticsPrintSeparationLine();
+		diagPrintSeparationLine();
 		MY_SERIALDEVICE.println(F("MCU:\n\n"
 		                          "[Dx] Read PIN\n"
 		                          "[Sx] Set PIN\n"
@@ -846,19 +882,19 @@ void diagnosticsMCUMenu(void)
 		                          "[Px] Sleep x ms\n"
 		                          "[X] Exit\n"
 		                         ));
-		diagnosticsPrintSeparationLine();
-		diagnosticsFlushSerial();
-		diagnosticsSerialInput();
+		diagPrintSeparationLine();
+		diagFlushSerial();
+		diagSerialInput();
 		if (inputCmd == 'D') {
 			hwPinMode(inputParameter.toInt(), INPUT);
-			PRINT(PSTR("PIN %" PRIu8 " = %" PRIu8 "\n"), inputParameter.toInt(),
+			diagPrint(PSTR("PIN %" PRIu8 " = %" PRIu8 "\n"), inputParameter.toInt(),
 			      hwDigitalRead(inputParameter.toInt()));
 		} else if (inputCmd == 'S') {
-			PRINT(PSTR("SET PIN %" PRIu8 "\n"), inputParameter.toInt());
+			diagPrint(PSTR("SET PIN %" PRIu8 "\n"), inputParameter.toInt());
 			hwPinMode(inputParameter.toInt(), OUTPUT);
 			hwDigitalWrite(inputParameter.toInt(), HIGH);
 		} else if (inputCmd == 'R') {
-			PRINT(PSTR("CLR PIN %" PRIu8 "\n"), inputParameter.toInt());
+			diagPrint(PSTR("CLR PIN %" PRIu8 "\n"), inputParameter.toInt());
 			hwPinMode(inputParameter.toInt(), OUTPUT);
 			hwDigitalWrite(inputParameter.toInt(), LOW);
 		} else if (inputCmd == 'W') {
@@ -866,10 +902,10 @@ void diagnosticsMCUMenu(void)
 			diagnosticsWatchdogTest();
 #endif
 		} else if (inputCmd == 'P') {
-			PRINT(PSTR("Sleeping %" PRIu32 "ms\n"), inputParameter.toInt());
+			diagPrint(PSTR("Sleeping %" PRIu32 "ms\n"), inputParameter.toInt());
 			transportSleep();
 			hwSleep((uint32_t)inputParameter.toInt());
-			PRINT(PSTR("waking up\n"));
+			diagPrint(PSTR("waking up\n"));
 			transportStandBy();
 		} else if (inputCmd == 'X') {
 			return;
@@ -882,7 +918,7 @@ void diagnosticsMCUMenu(void)
 void diagnosticsMainMenu(void)
 {
 	while (true) {
-		diagnosticsPrintSeparationLine();
+		diagPrintSeparationLine();
 		MY_SERIALDEVICE.println(F("Main:\n\n"
 		                          "[M] MCU\n"
 		                          "[E] EEPROM\n"
@@ -901,9 +937,9 @@ void diagnosticsMainMenu(void)
 		                          "[9] RFM95\n"
 #endif
 		                         ));
-		diagnosticsPrintSeparationLine();
-		diagnosticsFlushSerial();
-		diagnosticsSerialInput();
+		diagPrintSeparationLine();
+		diagFlushSerial();
+		diagSerialInput();
 		if (inputCmd == 'T') {
 			diagnosticsTransportSM();
 		} else if (inputCmd == 'E') {
@@ -934,7 +970,7 @@ void diagnosticsMainMenu(void)
 			MY_SERIALDEVICE.println(F("Press any key to exit\n"));
 			hwRandomNumberInit();
 			while (!MY_SERIALDEVICE.available()) {
-				PRINT(PSTR("> T_CPU=%" PRIi8 ", V_CPU=%" PRIu16 ", RNG=%" PRIu8 "\n"),
+				diagPrint(PSTR("> T_CPU=%" PRIi8 ", V_CPU=%" PRIu16 ", RNG=%" PRIu8 "\n"),
 				      hwCPUTemperature(), hwCPUVoltage(), random(256));
 				doYield();
 				delay(100);
@@ -949,10 +985,10 @@ void diagnosticsMainMenu(void)
 void diagnosticsRun(void)
 {
 	MY_SERIALDEVICE.println(F("\nMySensors Diagnostics v1.0"));
-	diagnosticsPrintSeparationLine();
-	PRINT(PSTR("LIB: MySensors %s\n"), MYSENSORS_LIBRARY_VERSION);
-	PRINT(PSTR("REL: %" PRIu8 "\n"), MYSENSORS_LIBRARY_VERSION_PRERELEASE_NUMBER);
-	PRINT(PSTR("VER: %" PRIx32 "\n"), MYSENSORS_LIBRARY_VERSION_INT);
-	PRINT(PSTR("CAP: %s\n"), MY_CAPABILITIES);
+	diagPrintSeparationLine();
+	diagPrint(PSTR("LIB: MySensors %s\n"), MYSENSORS_LIBRARY_VERSION);
+	diagPrint(PSTR("REL: %" PRIu8 "\n"), MYSENSORS_LIBRARY_VERSION_PRERELEASE_NUMBER);
+	diagPrint(PSTR("VER: %" PRIx32 "\n"), MYSENSORS_LIBRARY_VERSION_INT);
+	diagPrint(PSTR("CAP: %s\n"), MY_CAPABILITIES);
 	diagnosticsMainMenu();
 }
