@@ -118,7 +118,7 @@ static void diagRunMenu(const char* title, const DiagMenuItem_t* items, uint8_t 
 	}
 }
 
-void diagnosticsMySensorsEEPROMDump(void)
+static void diagEEPROMDump(void)
 {
 	uint8_t buffer[256];
 	diagPrint(PSTR("> MYS E2P START: 0x%04" PRIX16 "\n"), EEPROM_START);
@@ -202,7 +202,7 @@ void diagnosticsMySensorsEEPROMDump(void)
 	diagPrint(PSTR("> USER E2P >= 0x%04" PRIX16 "\n"), EEPROM_LOCAL_CONFIG_ADDRESS);
 }
 
-void diagnosticsClearMySensorsEEPROMConfig(void)
+static void diagClearEEPROMConfig(void)
 {
 	for (uint16_t i = EEPROM_START; i < EEPROM_START + EEPROM_LOCAL_CONFIG_ADDRESS; i++) {
 		hwWriteConfig(i, 0xFF);
@@ -213,7 +213,7 @@ void diagnosticsClearMySensorsEEPROMConfig(void)
 	MY_SERIALDEVICE.println(F("> E2P CLR"));
 }
 
-void diagnosticsClearMySensorsRoutingTable(void)
+static void diagClearRoutingTable(void)
 {
 	for (uint16_t i = 0; i < SIZE_ROUTES; i++) {
 		hwWriteConfig(EEPROM_ROUTES_ADDRESS + i, 0xFF);
@@ -224,7 +224,7 @@ void diagnosticsClearMySensorsRoutingTable(void)
 	MY_SERIALDEVICE.println(F("> RTE TABLE CLR"));
 }
 
-void diagnosticsClearMySensorsTransportSettings(void)
+static void diagClearTransportSettings(void)
 {
 	hwWriteConfig(EEPROM_NODE_ID_ADDRESS, 0xFF);
 	hwWriteConfig(EEPROM_PARENT_NODE_ID_ADDRESS, 0xFF);
@@ -232,7 +232,7 @@ void diagnosticsClearMySensorsTransportSettings(void)
 	MY_SERIALDEVICE.println(F("> TSP CFG CLR"));
 }
 
-void diagnosticsEEPROMTest(void)
+static void diagEEPROMTest(void)
 {
 	MY_SERIALDEVICE.println(F("EEPROM test:"));
 	uint16_t success = 0;
@@ -272,35 +272,16 @@ void diagnosticsEEPROMTest(void)
 
 }
 
-void diagnosticsEEPROMMenu(void)
+static void diagEEPROMMenu(void)
 {
-	while (true) {
-		diagPrintSeparationLine();
-		MY_SERIALDEVICE.println(F("EEPROM:\n\n"
-		                          "[D] Dump\n"
-		                          "[T] Test\n"
-		                          "[C] CLR\n"
-		                          "[R] CLR TSP RTE\n"
-		                          "[S] CLR TSP CFG\n"
-		                          "[X] Exit"
-		                         ));
-		diagPrintSeparationLine();
-		diagFlushSerial();
-		diagSerialInput();
-		if (inputCmd == 'D') {
-			diagnosticsMySensorsEEPROMDump();
-		} else if (inputCmd == 'T') {
-			diagnosticsEEPROMTest();
-		} else if (inputCmd == 'C') {
-			diagnosticsClearMySensorsEEPROMConfig();
-		} else if (inputCmd== 'R') {
-			diagnosticsClearMySensorsRoutingTable();
-		} else if (inputCmd == 'S') {
-			diagnosticsClearMySensorsTransportSettings();
-		} else if (inputCmd == 'X') {
-			return;
-		}
-	}
+	static const DiagMenuItem_t items[] = {
+		{ 'D', "Dump",        diagEEPROMDump             },
+		{ 'T', "Test",        diagEEPROMTest             },
+		{ 'C', "CLR",         diagClearEEPROMConfig      },
+		{ 'R', "CLR TSP RTE", diagClearRoutingTable      },
+		{ 'S', "CLR TSP CFG", diagClearTransportSettings },
+	};
+	diagRunMenu("EEPROM", items, (uint8_t)MY_ARRAYSIZE(items));
 }
 
 #if defined(MY_DIAGNOSTICS_CRYPTO)
@@ -943,7 +924,7 @@ void diagnosticsMainMenu(void)
 		if (inputCmd == 'T') {
 			diagnosticsTransportSM();
 		} else if (inputCmd == 'E') {
-			diagnosticsEEPROMMenu();
+			diagEEPROMMenu();
 		} else if (inputCmd == 'C') {
 #if defined(MY_DIAGNOSTICS_CRYPTO)
 			diagnosticsCryptoMenu();
