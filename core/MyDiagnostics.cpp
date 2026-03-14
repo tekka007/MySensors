@@ -650,7 +650,7 @@ static void diagRF24Menu(void)
 #endif
 
 #if defined(MY_SENSOR_NETWORK)
-void diagnosticsTSMStatus(void)
+static void diagTSMStatus(void)
 {
 	diagPrint(PSTR("%" PRIu32 " TSM,%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu32 ",%" PRIu32 ",%" PRIu8 ",%"
 	           PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 "\n"),
@@ -669,95 +669,86 @@ void diagnosticsTSMStatus(void)
 	      _transportSM.failureCounter,
 	      _transportSM.pingResponse);
 }
-#endif
 
-void diagnosticsTransportSM(void)
+static void diagTSPInit(void)
 {
-	while (true) {
-		diagPrintSeparationLine();
-		MY_SERIALDEVICE.println(F("TSP SM:\n"));
-#if defined(MY_SENSOR_NETWORK)
-		diagPrint(PSTR("ADDR=%" PRIu8 ",PAR=%" PRIu8 ",DGW=%" PRIu8 ",TSP=%" PRIu8 "\n"), getNodeId(),
-		      getDistanceGW(), getParentNodeId(),
-		      isTransportReady());
-		MY_SERIALDEVICE.println(F("[I] Init TSP\n"
-		                          "[S] Step TSM\n"
-		                          "[R] Run TSM"
-		                         ));
-#endif
-		MY_SERIALDEVICE.println(F("[X] Exit"));
-		diagPrintSeparationLine();
-		diagFlushSerial();
-		diagSerialInput();
-		if (inputCmd == 'I') {
-#if defined(MY_SENSOR_NETWORK)
-			transportInitialise();
-#endif
-		} else if (inputCmd == 'S') {
-#if defined(MY_SENSOR_NETWORK)
-			transportProcess();
-			diagnosticsTSMStatus();
-#endif
-		} else if (inputCmd == 'R') {
-#if defined(MY_SENSOR_NETWORK)
-			MY_SERIALDEVICE.println(F("[U] CKU\n"
-			                          "[F] FPAR\n"
-			                          "[E] TSP ERR\n"
-			                          "[I] INIT\n"
-			                          "[Cx] PNG x\n"
-			                          "[Nx] ID=x\n"
-			                          "[Px] PAR=x\n"
-			                          "[Tx] TX x\n"
-			                          "[Sx] Sleep x ms\n"
-			                          "[X] EXIT\n"
-			                         ));
-			uint32_t lastTimer = 0;
-			bool exitSignal = false;
-			while (!exitSignal) {
-				if (MY_SERIALDEVICE.available()) {
-					diagSerialInput();
-					if (inputCmd == 'U') {
-						transportCheckUplink();
-					} else if (inputCmd == 'F') {
-						transportSwitchSM(stParent);
-					} else if (inputCmd == 'E') {
-						transportSwitchSM(stFailure);
-					} else if (inputCmd == 'I') {
-						transportInitialise();
-					} else if (inputCmd == 'C') {
-						_transportSM.pingActive = false;
-						transportPingNode(inputParameter.toInt());
-					} else if (inputCmd == 'N') {
-						const uint8_t nodeID = inputParameter.toInt();
-						_transportConfig.nodeId = nodeID;
-						transportHALSetAddress(nodeID);
-						// Write ID to EEPROM
-						hwWriteConfig(EEPROM_NODE_ID_ADDRESS, nodeID);
-					} else if (inputCmd == 'P') {
-						_transportConfig.parentNodeId = inputParameter.toInt();
-					} else if (inputCmd == 'T') {
-						transportSendRoute(build(_msgTmp, inputParameter.toInt(), NODE_SENSOR_ID, C_SET, V_VAR1,
-						                         false).set((uint32_t)0xDEADBEAF));
-					} else if (inputCmd == 'S') {
-						(void)sleep((uint32_t)inputParameter.toInt(), false);
-					} else if (inputCmd == 'X') {
-						exitSignal = true;
-					}
+	transportInitialise();
+}
 
-				}
-				transportProcess();
-				if (hwMillis() - lastTimer > 1000ul) {
-					lastTimer = hwMillis();
-					diagnosticsTSMStatus();
-				}
+static void diagTSMStep(void)
+{
+	transportProcess();
+	diagTSMStatus();
+}
+
+static void diagTSMRun(void)
+{
+	MY_SERIALDEVICE.println(F("[U] CKU\n"
+	                           "[F] FPAR\n"
+	                           "[E] TSP ERR\n"
+	                           "[I] INIT\n"
+	                           "[Cx] PNG x\n"
+	                           "[Nx] ID=x\n"
+	                           "[Px] PAR=x\n"
+	                           "[Tx] TX x\n"
+	                           "[Sx] Sleep x ms\n"
+	                           "[X] EXIT\n"));
+	uint32_t lastTimer = 0;
+	bool exitSignal = false;
+	while (!exitSignal) {
+		if (MY_SERIALDEVICE.available()) {
+			diagSerialInput();
+			if (inputCmd == 'U') {
+				transportCheckUplink();
+			} else if (inputCmd == 'F') {
+				transportSwitchSM(stParent);
+			} else if (inputCmd == 'E') {
+				transportSwitchSM(stFailure);
+			} else if (inputCmd == 'I') {
+				transportInitialise();
+			} else if (inputCmd == 'C') {
+				_transportSM.pingActive = false;
+				transportPingNode(inputParameter.toInt());
+			} else if (inputCmd == 'N') {
+				const uint8_t nodeID = inputParameter.toInt();
+				_transportConfig.nodeId = nodeID;
+				transportHALSetAddress(nodeID);
+				// Write ID to EEPROM
+				hwWriteConfig(EEPROM_NODE_ID_ADDRESS, nodeID);
+			} else if (inputCmd == 'P') {
+				_transportConfig.parentNodeId = inputParameter.toInt();
+			} else if (inputCmd == 'T') {
+				transportSendRoute(build(_msgTmp, inputParameter.toInt(), NODE_SENSOR_ID, C_SET, V_VAR1,
+				                         false).set((uint32_t)0xDEADBEAF));
+			} else if (inputCmd == 'S') {
+				(void)sleep((uint32_t)inputParameter.toInt(), false);
+			} else if (inputCmd == 'X') {
+				exitSignal = true;
 			}
-#endif
-		} else if (inputCmd == 'X') {
-			return;
-		} else {
-			MY_SERIALDEVICE.println(F("!CMD"));
+		}
+		transportProcess();
+		if (hwMillis() - lastTimer > 1000ul) {
+			lastTimer = hwMillis();
+			diagTSMStatus();
 		}
 	}
+}
+#endif
+
+static void diagTransportMenu(void)
+{
+#if defined(MY_SENSOR_NETWORK)
+	diagPrint(PSTR("ADDR=%" PRIu8 ",PAR=%" PRIu8 ",DGW=%" PRIu8 ",TSP=%" PRIu8 "\n"),
+	          getNodeId(), getDistanceGW(), getParentNodeId(), isTransportReady());
+	static const DiagMenuItem_t items[] = {
+		{ 'I', "Init TSP", diagTSPInit },
+		{ 'S', "Step TSM", diagTSMStep },
+		{ 'R', "Run TSM",  diagTSMRun  },
+	};
+	diagRunMenu("TSP SM", items, (uint8_t)MY_ARRAYSIZE(items));
+#else
+	diagPrint(PSTR("> No transport configured\n"));
+#endif
 }
 
 void diagnosticsMCUMenu(void)
@@ -908,7 +899,7 @@ void diagnosticsMainMenu(void)
 		diagFlushSerial();
 		diagSerialInput();
 		if (inputCmd == 'T') {
-			diagnosticsTransportSM();
+			diagTransportMenu();
 		} else if (inputCmd == 'E') {
 			diagEEPROMMenu();
 		} else if (inputCmd == 'C') {
